@@ -3,7 +3,9 @@ const app = express();
 const cors = require("cors");
 require("dotenv").config();
 const bodyParser = require("body-parser");
-const { connect, Schema, model } = require("mongoose");
+const mongoose = require("mongoose");
+const { connect, Schema, model, ObjectId } = mongoose;
+const mongodb = require("mongodb");
 
 /* mongodb config */
 connect(process.env.MONGODB_URI)
@@ -38,7 +40,7 @@ const userSchema = new Schema({
         default: 0,
       },
       date: {
-        type: Date,
+        type: String,
         required: true,
         default: new Date().toTimeString(),
       },
@@ -91,6 +93,69 @@ app.get("/api/users", (req, res) => {
     .catch((err) => {
       console.error(err);
       return res.status(500).json({ error: "Internal server error" });
+    });
+});
+
+app.post("/api/users/:_id/exercises", (req, res) => {
+  const { _id, description, duration, date } = req.body;
+  // const formattedId = new mongodb.ObjectId(_id);
+  let formattedDate;
+
+  // Check if "date" is a non-empty string before attempting to create a Date object
+  if (date && typeof date === "string") {
+    formattedDate = new Date(date);
+  } else {
+    formattedDate = new Date();
+  }
+
+  User.findOneAndUpdate(
+    { _id: _id },
+    {
+      $inc: { count: 1 },
+      $push: {
+        log: {
+          description: description,
+          duration: Number(duration),
+          date: formattedDate,
+        },
+      },
+    },
+  )
+    .then((updatedUser) => {
+      if (!updatedUser) {
+        console.error(`❌  User ${_id} not found.`);
+        return res.status(404).json({ error: "User not found" });
+      }
+      console.log(`✅  User ${_id} updated`);
+      return res.status(200).json({
+        _id: updatedUser._id,
+        username: updatedUser.username,
+        date: updatedUser.date,
+        duration: updatedUser.duration,
+        description: updatedUser.description,
+      });
+    })
+    .catch((err) => {
+      console.error(`❌  Error updating user ${_id}: ${err}.`);
+      res.status(500).json({ error: "Internal server error" });
+    });
+});
+
+app.get("/api/users/:_id/logs", (req, res) => {
+  const _id = req.params._id;
+
+  User.findOne({ _id: _id })
+    .then((user) => {
+      return res.status(200).json({
+        _id: user._id,
+        username: user.username,
+        count: user.count,
+        log: user.log,
+      });
+    })
+    .catch((err) => {
+      console.error(`❌  Error finding user ${_id}: ${err}.`);
+      res.status(500).json({ error: "Internal server error" });
     });
 });
 
