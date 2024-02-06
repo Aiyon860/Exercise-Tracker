@@ -4,8 +4,7 @@ const cors = require("cors");
 require("dotenv").config();
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
-const { connect, Schema, model, ObjectId } = mongoose;
-const mongodb = require("mongodb");
+const { connect, Schema, model } = mongoose;
 
 /* mongodb config */
 connect(process.env.MONGODB_URI)
@@ -44,6 +43,7 @@ const userSchema = new Schema({
         required: true,
         default: new Date().toTimeString(),
       },
+      _id: false,
     },
   ],
 });
@@ -97,8 +97,8 @@ app.get("/api/users", (req, res) => {
 });
 
 app.post("/api/users/:_id/exercises", (req, res) => {
-  const { _id, description, duration, date } = req.body;
-  // const formattedId = new mongodb.ObjectId(_id);
+  const _id = req.body["_id"] || req.params._id;
+  const { description, duration, date } = req.body;
   let formattedDate;
 
   // Check if "date" is a non-empty string before attempting to create a Date object
@@ -115,8 +115,8 @@ app.post("/api/users/:_id/exercises", (req, res) => {
       $push: {
         log: {
           description: description,
-          duration: Number(duration),
-          date: formattedDate,
+          duration: +duration,
+          date: formattedDate.toDateString(),
         },
       },
     },
@@ -130,9 +130,9 @@ app.post("/api/users/:_id/exercises", (req, res) => {
       return res.status(200).json({
         _id: updatedUser._id,
         username: updatedUser.username,
-        date: updatedUser.date,
-        duration: updatedUser.duration,
-        description: updatedUser.description,
+        date: formattedDate.toDateString(),
+        duration: Number(duration),
+        description: description,
       });
     })
     .catch((err) => {
@@ -143,15 +143,37 @@ app.post("/api/users/:_id/exercises", (req, res) => {
 
 app.get("/api/users/:_id/logs", (req, res) => {
   const _id = req.params._id;
+  const from = req.query.from || "1970-01-01";
+  const to = req.query.to || "9999-01-01";
+  const limit = +req.query.limit || 100;
+
+  const fromDate = new Date(from);
+  const toDate = new Date(to);
 
   User.findOne({ _id: _id })
     .then((user) => {
-      return res.status(200).json({
+      const filteredLogs = user.log.filter((log) => {
+        const logDate = new Date(log.date);
+        return logDate >= fromDate && logDate <= toDate;
+      });
+
+      const response = {
         _id: user._id,
         username: user.username,
-        count: user.count,
-        log: user.log,
-      });
+        count: filteredLogs.slice(0, limit).length || user.log.length,
+        log: filteredLogs.slice(0, limit) || user.log,
+      };
+
+      // Conditionally add 'from' and 'to' parameters to the response
+      if (req.query.from) {
+        response.from = fromDate.toDateString();
+      }
+
+      if (req.query.to) {
+        response.to = toDate.toDateString();
+      }
+
+      return res.status(200).json(response);
     })
     .catch((err) => {
       console.error(`❌  Error finding user ${_id}: ${err}.`);
